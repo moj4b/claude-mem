@@ -130,3 +130,6 @@ esac
 say ""
 say "for TAB completion:"
 say "  echo 'eval \"\$(mem completion bash)\"' >> ~/.bashrc"
+say ""
+say "from now on, mem updates itself:"
+say "  mem upgrade"

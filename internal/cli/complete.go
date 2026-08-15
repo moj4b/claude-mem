@@ -12,9 +12,10 @@ import (
 )
 
 // topLevelCandidates are offered when no subcommand has been typed yet
-// (§II.10). __complete itself is hidden.
+// (§II.10). The hidden commands — __complete, __update-check — are absent.
 var topLevelCandidates = []string{
 	"list", "read", "show", "search", "path", "projects", "completion",
+	"upgrade", "update",
 	"--help", "--version", "--dir", "--all", "--project",
 }
 
@@ -94,6 +95,8 @@ func completeCandidates(words []string) []string {
 		return nil
 	case "completion":
 		return filterPrefix([]string{"bash"}, word)
+	case "upgrade", "update":
+		return filterPrefix([]string{"--check"}, word)
 	}
 	return nil
 }
