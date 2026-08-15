@@ -79,7 +79,11 @@ stderr is a terminal — pipes, scripts and CI never see it — and never during
 the binary.
 
 Installed with `go install`, or built from source? `mem upgrade` still installs the latest release
-over whatever it finds, but an unstamped build has no version to compare, so it is never nagged.
+over whatever it finds. Whether such a build gets the notice depends on what it can say about
+itself: `go install` records the module version, and a build from a git checkout gets a version the
+Go toolchain derives from the last tag, so both are ordered against the feed like any release. A
+build with no version information at all — `mem --version` says `(devel)` — is never nagged, because
+there is nothing to compare it to.
 
 ### With Go
 
