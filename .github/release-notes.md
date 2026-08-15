@@ -4,6 +4,13 @@
 curl -fsSL https://raw.githubusercontent.com/moj4b/claude-mem/main/install.sh | sh
 ```
 
+Already have `mem`? Upgrade in place — it verifies the download against the checksums below before
+replacing itself:
+
+```sh
+mem upgrade
+```
+
 Or take the binary straight out of the archive:
 
 ```sh

@@ -39,14 +39,17 @@ func TestCompleteWithNoWordsOffersEverySubcommandAndFlag(t *testing.T) {
 	got := complete(t)
 	for _, want := range []string{
 		"list", "read", "show", "search", "path", "projects", "completion",
+		"upgrade", "update",
 		"--help", "--version", "--dir", "--all", "--project",
 	} {
 		if !contains(got, want) {
 			t.Errorf("candidates %v missing %q", got, want)
 		}
 	}
-	if contains(got, "__complete") {
-		t.Error("__complete is hidden and must not be offered")
+	for _, hidden := range []string{"__complete", updateCheckCmd} {
+		if contains(got, hidden) {
+			t.Errorf("%s is hidden and must not be offered", hidden)
+		}
 	}
 }
 

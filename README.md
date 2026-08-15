@@ -52,6 +52,35 @@ Windows is not built or released. The path layer is written against `filepath` a
 but nothing has verified it: the test suite itself is not portable yet, so there is no evidence to
 stand a release on. Linux and macOS are what CI runs and what ships.
 
+### Upgrade
+
+```sh
+mem upgrade
+```
+
+`mem` updates itself. It downloads the current release for your platform, checks it against the
+release's `checksums.txt`, runs the downloaded binary once to be sure it works, and only then
+renames it over the running one. If any of that fails, the `mem` you have keeps working.
+
+```sh
+mem upgrade --check   # report whether a newer release exists; install nothing
+```
+
+When a newer release exists, every command adds one line on stderr:
+
+```
+mem v0.2.0 is available (you have v0.1.0) — run `mem upgrade`
+```
+
+That costs no network. The answer comes from a cache under `$XDG_CACHE_HOME/mem`, refreshed at most
+once a day by a background process, so no command ever waits on GitHub. The line appears only when
+stderr is a terminal — pipes, scripts and CI never see it — and never during TAB completion. Set
+`MEM_NO_UPDATE_CHECK=1` to switch it off entirely, which is what you want if something else manages
+the binary.
+
+Installed with `go install`, or built from source? `mem upgrade` still installs the latest release
+over whatever it finds, but an unstamped build has no version to compare, so it is never nagged.
+
 ### With Go
 
 ```sh
@@ -83,14 +112,17 @@ internal/term/      TTY detection, width, colour, truncation
 internal/memory/    Memory, Store, frontmatter and index parsing,
                     name matching, content search
 internal/resolve/   the six-layer path walk, slugs, settings
+internal/update/    the release feed, the update-check cache, and the
+                    verified self-replacement behind `mem upgrade`
 internal/cli/       argument parsing, dispatch, exit codes, scope,
                     one file per command, and every formatter
 ```
 
-Dependencies run one way: `term`, `memory` and `resolve` are independent leaves;
-only `cli` imports them. Rendering lives entirely in `cli`, so the domain
-packages never format output — which is what keeps the TTY and pipe views in
-one place.
+Dependencies run one way: `term`, `memory`, `resolve` and `update` are
+independent leaves; only `cli` imports them. Rendering lives entirely in `cli`,
+so the domain packages never format output — which is what keeps the TTY and
+pipe views in one place. `update` is the only package that touches the network,
+and nothing on the read path calls into it.
 
 ## Scope: which project a command acts on
 
@@ -139,6 +171,8 @@ mem search <query>        case-insensitive search across memory contents
 mem path [--explain]      print the resolved memory directory
 mem projects              list every project that has memory
 mem completion bash       print the bash completion script
+mem upgrade [--check]     replace this binary with the latest release
+mem update                alias for `upgrade`
 mem --help | -h
 mem --version | -v
 ```
@@ -151,6 +185,7 @@ exclusive.
 | `--dir <path>` | all | Use this directory, skipping resolution |
 | `--all` | `list`, `search`, `path` | Widen to every project that has memory |
 | `--project <name>` | `list`, `search`, `read` | Act on a different project's memory |
+| `--check` | `upgrade` | Report whether a newer release exists; install nothing |
 
 ### `list`
 
@@ -342,6 +377,9 @@ $ mem path --explain
 The distinction the tool never blurs: **no memory directory (3) ≠ directory is empty (0) ≠ name not
 found (1).** Three situations, three user actions.
 
+A failed `mem upgrade` — unreachable feed, bad checksum, unwritable location, unsupported platform —
+is exit 1. Being already current is exit 0 and a sentence, not an error.
+
 ## Name matching
 
 Queries are normalized (lowercase, trailing `.md` stripped) and matched in tiers: exact, then
@@ -376,6 +414,10 @@ go vet ./...
 
 That is what CI runs, on Linux and macOS, at Go 1.23 and stable. They do not yet pass on Windows,
 for reasons that are the tests' own — see the note under [Install](#prebuilt-binary).
+
+Nothing there reaches the network. The upgrade tests publish a fake release from a local server and
+drive the real download-verify-swap path against it, down to replacing a binary on disk and running
+what lands there.
 
 ## Provenance
 

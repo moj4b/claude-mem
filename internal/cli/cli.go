@@ -27,6 +27,8 @@ usage:
   mem path [--explain]      print the resolved memory directory
   mem projects              list every project that has memory
   mem completion bash       print the bash completion script
+  mem upgrade [--check]     replace this binary with the latest release
+  mem update                alias for ` + "`upgrade`" + `
   mem --help | -h
   mem --version | -v
 
@@ -34,28 +36,39 @@ flags:
   --dir <path>              use this directory, skipping resolution
   --all                     widen to every project that has memory
   --project <name>          act on a different project's memory
+  --check                   with ` + "`upgrade`" + `: report, install nothing
 `
 
 // Run is the whole command line: argv in, exit code out. Everything the tool
 // does is reachable from here, which is what makes the process boundary
 // testable without spawning a process.
 func Run(args []string, stdout, stderr io.Writer) int {
+	cmd, code := run(args, stdout, stderr)
+	// Last, so a newer release is a footnote to the output rather than
+	// something the payload scrolls away (§II.12).
+	notifyUpdate(cmd, stderr)
+	return code
+}
+
+// run does the work and names the command it ran, which is all notifyUpdate
+// needs to know whether it may speak.
+func run(args []string, stdout, stderr io.Writer) (string, int) {
 	for _, a := range args {
 		switch a {
 		case "--help", "-h":
 			fmt.Fprint(stdout, usage)
-			return 0
+			return "--help", 0
 		case "--version", "-v":
 			fmt.Fprintf(stdout, "mem %s\n", versionString())
-			return 0
+			return "--version", 0
 		}
 	}
 
 	opts, err := parseArgs(args)
 	if err != nil {
-		return fail(stderr, exitUsage, err)
+		return opts.cmd, fail(stderr, exitUsage, err)
 	}
-	return dispatch(opts, stdout, stderr)
+	return opts.cmd, dispatch(opts, stdout, stderr)
 }
 
 // options is the parsed command line: one subcommand, its operands, and the
@@ -67,13 +80,16 @@ type options struct {
 	all     bool
 	project string
 	explain bool
+	check   bool
 }
 
 // commands are every dispatchable subcommand. `mem` with no subcommand is
-// `list` (§II.1); __complete is hidden but dispatchable (§II.10).
+// `list` (§II.1); __complete (§II.10) and __update-check (§II.12) are hidden
+// but dispatchable.
 var commands = map[string]bool{
 	"list": true, "read": true, "show": true, "search": true,
 	"path": true, "projects": true, "completion": true, "__complete": true,
+	"upgrade": true, "update": true, updateCheckCmd: true,
 }
 
 func parseArgs(args []string) (options, error) {
@@ -106,6 +122,8 @@ func parseArgs(args []string) (options, error) {
 			o.all = true
 		case a == "--explain":
 			o.explain = true
+		case a == "--check":
+			o.check = true
 		case strings.HasPrefix(a, "-") && a != "-":
 			return o, fmt.Errorf("unknown flag '%s'\n  run `mem --help` for usage", a)
 		case o.cmd == "":
@@ -149,14 +167,17 @@ var operand = map[string][2]string{
 // handlers routes each accepted subcommand to its implementation. Every key of
 // `commands` must appear here and vice versa.
 var handlers = map[string]func(options, io.Writer, io.Writer) int{
-	"list":       cmdList,
-	"read":       cmdRead,
-	"show":       cmdRead,
-	"search":     cmdSearch,
-	"path":       cmdPath,
-	"projects":   cmdProjects,
-	"completion": cmdCompletion,
-	"__complete": cmdComplete,
+	"list":         cmdList,
+	"read":         cmdRead,
+	"show":         cmdRead,
+	"search":       cmdSearch,
+	"path":         cmdPath,
+	"projects":     cmdProjects,
+	"completion":   cmdCompletion,
+	"__complete":   cmdComplete,
+	"upgrade":      cmdUpgrade,
+	"update":       cmdUpgrade,
+	updateCheckCmd: cmdUpdateCheck,
 }
 
 func dispatch(o options, stdout, stderr io.Writer) int {
@@ -175,6 +196,9 @@ var (
 	cmdProjects   = cmdProjectsFn
 	cmdCompletion = cmdCompletionFn
 	cmdComplete   = cmdCompleteFn
+
+	cmdUpgrade     = cmdUpgradeFn
+	cmdUpdateCheck = cmdUpdateCheckFn
 )
 
 // fail writes a diagnostic to stderr (§II.2: payload to stdout, diagnostics to
