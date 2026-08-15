@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.23 is the floor declared in go.mod; stable is what releases build
+        # with. Windows is absent on purpose — see the note in cross-build.
+        go: ["1.23", "stable"]
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false # stdlib only: there is no go.sum to key a cache on
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go test
+        run: go test -race ./...
+
+      - name: go build
+        run: go build ./cmd/mem
+
+  # The cross-compile matrix the release uses, run on every change so a broken
+  # target is caught here rather than at tag time.
+  #
+  # Windows is not built and not released. The path layer is written against
+  # `filepath` and looks portable, but the test suite is not: it builds settings
+  # JSON by string concatenation, so a Windows path's backslashes land as
+  # invalid JSON escapes and the file is silently skipped. Until the suite runs
+  # green on Windows, `mem` is a Linux and macOS tool and says so.
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Build every release target
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/mem
+            echo "ok $target"
+          done

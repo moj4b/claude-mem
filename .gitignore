@@ -1,0 +1,44 @@
+# Build output — `go build -o mem .` at the repo root.
+# Anchored so a future package directory named mem/ would still be tracked.
+/mem
+
+# Release staging — what .github/workflows/release.yml builds into.
+/dist/
+/stage/
+
+# The original implementation plan, and the acceptance scripts that drove it.
+# Kept locally, deliberately unpublished: both are written against one
+# machine's real projects and name them throughout. Nothing here runs anywhere
+# else, so the repo loses nothing a reader could have used.
+/PLAN.md
+/e2e/
+
+# Go build and test artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
+
+# Coverage
+*.out
+coverage.html
+
+# Go workspace files — local to a machine, never shared
+go.work
+go.work.sum
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local config
+.claude

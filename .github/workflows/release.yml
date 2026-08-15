@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release for (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false # stdlib only: there is no go.sum to key a cache on
+
+      - name: Verify the tagged commit
+        run: |
+          go vet ./...
+          go test ./...
+
+      # Linux and macOS only — see the note in ci.yml's cross-build job.
+      - name: Build every target
+        run: |
+          set -euo pipefail
+          mkdir -p dist stage
+          cp LICENSE README.md stage/
+
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            goos=${target%/*}
+            goarch=${target#*/}
+
+            # -trimpath keeps the runner's paths out of the binary; -s -w drops
+            # the symbol table, which is most of the download size.
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
+              -trimpath \
+              -ldflags "-s -w -X github.com/moj4b/claude-mem/internal/cli.version=${VERSION}" \
+              -o stage/mem ./cmd/mem
+
+            # Deliberately not version-stamped: it keeps
+            # /releases/latest/download/<asset> a working URL, which is what
+            # makes the README's install line a copy-paste with no version in
+            # it. `mem --version` is how you tell builds apart.
+            base="mem_${goos}_${goarch}"
+            (cd stage && tar -czf "../dist/${base}.tar.gz" mem LICENSE README.md)
+            rm -f stage/mem
+            echo "built $base"
+          done
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./* | sed 's| \./| |' > checksums.txt
+          cat checksums.txt
+
+      - name: Smoke-test the linux/amd64 build
+        run: |
+          set -euo pipefail
+          tar -xzf dist/mem_linux_amd64.tar.gz -C /tmp mem
+          got=$(/tmp/mem --version)
+          echo "$got"
+          if [ "$got" != "mem ${VERSION}" ]; then
+            echo "::error::--version said '$got', want 'mem ${VERSION}'"
+            exit 1
+          fi
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" dist/* --clobber
+          else
+            gh release create "$VERSION" dist/* \
+              --title "$VERSION" \
+              --generate-notes \
+              --notes-file .github/release-notes.md
+          fi
