@@ -85,11 +85,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Deliberately not --generate-notes. On a repository with one author
+          # it writes "* <commit> by @<owner>" under a "What's Changed" heading
+          # and announces that the owner "made their first contribution" —
+          # attribution nobody reading a release page needs. The notes are the
+          # install instructions plus a link to the diff, and nothing else.
+          notes=$(mktemp)
+          cat .github/release-notes.md > "$notes"
+          prev=$(git tag --sort=-v:refname | grep -v "^${VERSION}\$" | head -1)
+          if [ -n "$prev" ]; then
+            printf '\n**Full changelog**: https://github.com/%s/compare/%s...%s\n' \
+              "$GITHUB_REPOSITORY" "$prev" "$VERSION" >> "$notes"
+          fi
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release upload "$VERSION" dist/* --clobber
           else
             gh release create "$VERSION" dist/* \
               --title "$VERSION" \
-              --generate-notes \
-              --notes-file .github/release-notes.md
+              --notes-file "$notes"
           fi
