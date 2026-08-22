@@ -237,3 +237,50 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
+
+func TestCompleteOffersRmAsASubcommand(t *testing.T) {
+	completeFixture(t)
+	if got := complete(t); !contains(got, "rm") {
+		t.Errorf("candidates = %v, want them to include rm", got)
+	}
+}
+
+func TestCompleteRmOffersMemoryNamesButNotTheIndex(t *testing.T) {
+	completeFixture(t)
+	got := complete(t, "rm", "")
+	for _, want := range []string{"user_prefs", "project_roadmap", "feedback_docker"} {
+		if !contains(got, want) {
+			t.Errorf("candidates = %v, want them to include %q", got, want)
+		}
+	}
+	// `rm` refuses the index, so offering it on TAB would advertise a command
+	// that cannot run.
+	if contains(got, memory.IndexName) {
+		t.Errorf("candidates = %v, want them to exclude %q", got, memory.IndexName)
+	}
+}
+
+func TestCompleteRmStopsAfterOneName(t *testing.T) {
+	completeFixture(t)
+	if got := complete(t, "rm", "user_prefs", ""); got != nil {
+		t.Errorf("candidates = %v, want none — rm takes exactly one name", got)
+	}
+}
+
+func TestCompleteRmOffersForceOnADash(t *testing.T) {
+	completeFixture(t)
+	got := complete(t, "rm", "-")
+	for _, want := range []string{"--force", "-f"} {
+		if !contains(got, want) {
+			t.Errorf("candidates = %v, want them to include %q", got, want)
+		}
+	}
+}
+
+func TestCompleteRmStillOffersNamesAfterAFlag(t *testing.T) {
+	completeFixture(t)
+	got := complete(t, "rm", "--force", "")
+	if !contains(got, "user_prefs") {
+		t.Errorf("candidates = %v, want memory names after --force", got)
+	}
+}

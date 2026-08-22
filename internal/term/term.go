@@ -26,6 +26,15 @@ func IsTTY(w io.Writer) bool {
 	if !ok {
 		return false
 	}
+	return IsTTYFile(f)
+}
+
+// IsTTYFile is the same test asked of a file directly, for stdin — which is
+// read rather than written and so never arrives as an io.Writer.
+func IsTTYFile(f *os.File) bool {
+	if f == nil {
+		return false
+	}
 	info, err := f.Stat()
 	if err != nil {
 		return false

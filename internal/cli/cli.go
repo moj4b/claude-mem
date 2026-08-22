@@ -24,6 +24,7 @@ usage:
   mem read <name>           print a memory; partial names accepted
   mem show <name>           alias for ` + "`read`" + `
   mem search <query>        case-insensitive search across memory contents
+  mem rm [-f] <name>        remove a memory and its ` + "`MEMORY.md`" + ` line
   mem path [--explain]      print the resolved memory directory
   mem projects              list every project that has memory
   mem completion bash       print the bash completion script
@@ -37,6 +38,7 @@ flags:
   --all                     widen to every project that has memory
   --project <name>          act on a different project's memory
   --check                   with ` + "`upgrade`" + `: report, install nothing
+  --force, -f               with ` + "`rm`" + `: remove without asking
 `
 
 // Run is the whole command line: argv in, exit code out. Everything the tool
@@ -81,13 +83,14 @@ type options struct {
 	project string
 	explain bool
 	check   bool
+	force   bool
 }
 
 // commands are every dispatchable subcommand. `mem` with no subcommand is
 // `list` (§II.1); __complete (§II.10) and __update-check (§II.12) are hidden
 // but dispatchable.
 var commands = map[string]bool{
-	"list": true, "read": true, "show": true, "search": true,
+	"list": true, "read": true, "show": true, "search": true, "rm": true,
 	"path": true, "projects": true, "completion": true, "__complete": true,
 	"upgrade": true, "update": true, updateCheckCmd: true,
 }
@@ -124,6 +127,8 @@ func parseArgs(args []string) (options, error) {
 			o.explain = true
 		case a == "--check":
 			o.check = true
+		case a == "--force", a == "-f":
+			o.force = true
 		case strings.HasPrefix(a, "-") && a != "-":
 			return o, fmt.Errorf("unknown flag '%s'\n  run `mem --help` for usage", a)
 		case o.cmd == "":
@@ -147,11 +152,16 @@ func parseArgs(args []string) (options, error) {
 	if set > 1 {
 		return o, fmt.Errorf("--dir, --all and --project cannot be combined")
 	}
-	// read resolves to exactly one memory, so widening it is a usage error
-	// rather than a silent widen (§II.0, §II.5).
-	if o.all && (o.cmd == "read" || o.cmd == "show") {
+	// read and rm resolve to exactly one memory, so widening either is a usage
+	// error rather than a silent widen (§II.0, §II.5). For rm the silent widen
+	// would delete across every project at once.
+	if o.all && (o.cmd == "read" || o.cmd == "show" || o.cmd == "rm") {
+		what := "read"
+		if o.cmd == "rm" {
+			what = "rm"
+		}
 		return o, fmt.Errorf("%s cannot be combined with --all\n"+
-			"  read resolves to one memory; use --project <name> to retarget", o.cmd)
+			"  %s resolves to one memory; use --project <name> to retarget", o.cmd, what)
 	}
 	return o, nil
 }
@@ -162,6 +172,7 @@ var operand = map[string][2]string{
 	"read":   {"memory name", "name"},
 	"show":   {"memory name", "name"},
 	"search": {"query", "query"},
+	"rm":     {"memory name", "name"},
 }
 
 // handlers routes each accepted subcommand to its implementation. Every key of
@@ -171,6 +182,7 @@ var handlers = map[string]func(options, io.Writer, io.Writer) int{
 	"read":         cmdRead,
 	"show":         cmdRead,
 	"search":       cmdSearch,
+	"rm":           cmdRm,
 	"path":         cmdPath,
 	"projects":     cmdProjects,
 	"completion":   cmdCompletion,
@@ -192,6 +204,7 @@ var (
 	cmdList       = cmdListFn
 	cmdRead       = cmdReadFn
 	cmdSearch     = cmdSearchFn
+	cmdRm         = cmdRmFn
 	cmdPath       = cmdPathFn
 	cmdProjects   = cmdProjectsFn
 	cmdCompletion = cmdCompletionFn

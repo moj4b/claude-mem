@@ -63,3 +63,19 @@ func TestTruncateAddsEllipsisOnlyWhenTooLong(t *testing.T) {
 		t.Errorf("truncate on multibyte = %q, want %q", got, "a→b→…")
 	}
 }
+
+func TestIsTTYFileOnARegularFileAndOnNil(t *testing.T) {
+	// The stdin-side check: a redirected stdin is a regular file, never a
+	// terminal, which is what makes `mem rm` refuse rather than assume yes.
+	f, err := os.CreateTemp(t.TempDir(), "stdin-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if IsTTYFile(f) {
+		t.Error("IsTTYFile = true for a regular file, want false")
+	}
+	if IsTTYFile(nil) {
+		t.Error("IsTTYFile = true for nil, want false")
+	}
+}
