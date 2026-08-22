@@ -172,6 +172,7 @@ mem list                  list memories, grouped by type
 mem read <name>           print a memory; partial names accepted
 mem show <name>           alias for `read`
 mem search <query>        case-insensitive search across memory contents
+mem rm [-f] <name>        remove a memory and its `MEMORY.md` line
 mem path [--explain]      print the resolved memory directory
 mem projects              list every project that has memory
 mem completion bash       print the bash completion script
@@ -188,8 +189,9 @@ exclusive.
 |---|---|---|
 | `--dir <path>` | all | Use this directory, skipping resolution |
 | `--all` | `list`, `search`, `path` | Widen to every project that has memory |
-| `--project <name>` | `list`, `search`, `read` | Act on a different project's memory |
+| `--project <name>` | `list`, `search`, `read`, `rm` | Act on a different project's memory |
 | `--check` | `upgrade` | Report whether a newer release exists; install nothing |
+| `--force`, `-f` | `rm` | Remove without asking |
 
 ### `list`
 
@@ -229,6 +231,83 @@ Case-insensitive literal substring — not a regex. It searches the full raw fil
 frontmatter, so `mem search 'type: reference'` matches on type. Piped, it emits grep format:
 `feedback_build_cache.md:7:1. **Layer cache invalidated by a stale ARG**…`, or
 `courier:feedback_build_cache.md:7:…` under `--all`.
+
+### `rm`
+
+```
+$ mem rm roadmap
+remove project_roadmap (project_roadmap.md)? [y/N] y
+removed project_roadmap (project_roadmap.md)
+  and its line in MEMORY.md
+2 memories still link to [[project_roadmap]]:
+  feedback_no_local_paths
+  feedback_short_commit
+```
+
+Removes one memory **and** the `MEMORY.md` line pointing at it. The index is what gets loaded into
+context each session, so a deleted memory that keeps its pointer there is the failure this command
+exists to prevent. Only bullet list lines pointing at that file are dropped — prose that happens to
+mention the memory, examples inside ``` or `~~~` fences, headings and every other byte survive
+untouched, and nothing is reformatted. A memory with no index line is removed just the same.
+
+Because a non-bullet line is left alone, the index can still mention a memory after it goes. `rm`
+says so rather than implying the pointer went:
+
+```
+MEMORY.md still points at project_roadmap.md — the line is not a bullet, so it was left alone
+```
+
+The index is rewritten **before** the unlink, through a temporary file in the same directory, so it
+is replaced whole or not at all. If it cannot be rewritten, nothing is removed and `rm` exits 1 —
+the alternative ordering can strand a pointer to a file that is already gone, which no re-run could
+repair.
+
+It asks first. The prompt names what the query **resolved to**, which matters because names match in
+four tiers down to a fuzzy one: `rm roadmap` above reached `project_roadmap` on the substring tier,
+and the prompt is the only place that guess becomes visible before the file goes. Anything but `y`
+or `yes` is no, so a bare Enter keeps the memory and exits 1.
+
+`--force` / `-f` skips the prompt. Without a terminal to ask — piped, scripted, in CI — `rm` refuses
+and exits 2 rather than assuming yes:
+
+```
+$ mem rm roadmap < /dev/null
+rm needs a terminal to confirm
+  pass --force to remove project_roadmap without asking
+```
+
+Ambiguity is reported and nothing is removed. Memories linking to the removed one with `[[name]]`
+are named on stderr and **never rewritten** — an unresolved link marks intent to write that memory
+rather than a broken file. That report is advisory and does not change the exit code. The scan
+covers the memory directory only.
+
+The outcome goes to stdout and everything else to stderr, so `mem rm x -f 2>/dev/null` leaves just
+what was removed.
+
+#### What `rm` can reach
+
+Only a memory, and only one. The query is matched against the memories already loaded from the
+directory — it is never treated as a path, so `mem rm ../../secret` finds no memory rather than
+escaping anywhere. A name that normalizes to nothing is refused outright — `""`, whitespace and
+`.md` alike, since matching strips the extension — so `mem rm -f "$unset.md"` cannot resolve to
+whatever happens to be there. Only one name is accepted; a second is a usage error rather than a
+silently ignored request. Before the unlink, the resolved file must independently pass all of:
+
+| Must be | Or it is refused |
+|---|---|
+| A direct child of the memory directory | Nested and escaping paths |
+| Ending in `.md` | `notes.txt`, `.consolidate-lock`, anything else |
+| Not `MEMORY.md` | The index is not a memory |
+| A file, never a directory | `os.Remove` deletes empty directories; this does not |
+
+A symlinked memory is removed as the **link** — whatever it points at is left alone. The index
+rewrite is confined the same way: a symlinked `MEMORY.md` is replaced rather than written through,
+so neither step can write outside the memory directory. Those checks restate what loading the
+directory already filters, deliberately — it keeps a destructive step from depending on a distant
+caller having filtered correctly.
+
+`--all` is refused for the same reason `read` refuses it — this resolves to exactly one memory, and
+widening a delete would reach every project at once.
 
 ### `projects`
 
@@ -384,6 +463,12 @@ found (1).** Three situations, three user actions.
 A failed `mem upgrade` — unreachable feed, bad checksum, unwritable location, unsupported platform —
 is exit 1. Being already current is exit 0 and a sentence, not an error.
 
+For `mem rm`, exit 1 means the memory is still there: the prompt was declined, the name matched
+nothing or was ambiguous, or the removal could not be completed because the index was unreadable or
+the directory unwritable. Exit 2 means the command line needs changing — no terminal to confirm and
+no `--force`, no name, a name that normalizes to nothing, more than one name, `MEMORY` itself, the
+resolved file failing the removability checks, or `--all`.
+
 ## Name matching
 
 Queries are normalized (lowercase, trailing `.md` stripped) and matched in tiers: exact, then
@@ -406,8 +491,9 @@ eval "$(mem completion bash)"
 The emitted script is a thin shim; all the logic lives in the binary behind a hidden `__complete`,
 so memory-name completion stays in sync automatically. It completes subcommands, flags, memory
 names, and project names, and it honours scope — `mem read --project courier <TAB>` offers courier's
-memories. It never writes to stderr and never exits non-zero, because a noisy completion would
-corrupt the prompt line. Measured at 2 ms.
+memories. `mem rm <TAB>` offers the same names minus `MEMORY`, which `rm` refuses, so TAB never
+advertises a command that cannot run. It never writes to stderr and never exits non-zero, because a
+noisy completion would corrupt the prompt line. Measured at 2 ms.
 
 ## Tests
 

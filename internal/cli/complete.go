@@ -8,13 +8,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/moj4b/claude-mem/internal/memory"
 	"github.com/moj4b/claude-mem/internal/resolve"
 )
 
 // topLevelCandidates are offered when no subcommand has been typed yet
 // (§II.10). The hidden commands — __complete, __update-check — are absent.
 var topLevelCandidates = []string{
-	"list", "read", "show", "search", "path", "projects", "completion",
+	"list", "read", "show", "search", "rm", "path", "projects", "completion",
 	"upgrade", "update",
 	"--help", "--version", "--dir", "--all", "--project",
 }
@@ -86,6 +87,23 @@ func completeCandidates(words []string) []string {
 			return nil // read takes exactly one name
 		}
 		return filterPrefix(memoryNames(project), word)
+	case "rm":
+		if strings.HasPrefix(word, "-") {
+			// --all is absent on purpose: rm refuses it (§II.0).
+			return filterPrefix([]string{"--force", "-f", "--project"}, word)
+		}
+		if operands > 0 {
+			return nil // rm takes exactly one name
+		}
+		// Minus the index: rm refuses it, so offering it would advertise a
+		// command that cannot run (§II.10).
+		var names []string
+		for _, n := range memoryNames(project) {
+			if n != memory.IndexName {
+				names = append(names, n)
+			}
+		}
+		return filterPrefix(names, word)
 	case "path":
 		return filterPrefix([]string{"--all", "--explain"}, word)
 	case "list", "search":
